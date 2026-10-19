@@ -1,0 +1,14 @@
+# Build artifacts
+/bin/
+*.test
+*.exe
+*.out
+
+# Coverage and profiles
+coverage.out
+coverage.html
+*.prof
+
+# Editors / OS
+.idea/
+.DS_Store
