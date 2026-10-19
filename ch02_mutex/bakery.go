@@ -20,16 +20,38 @@ type Bakery struct {
 
 // NewBakery returns a Bakery lock for n threads.
 func NewBakery(n int) *Bakery {
-	// TODO: validate n >= 1 and allocate the flag/label slices.
-	return &Bakery{n: n}
+	return &Bakery{n: n, flag: make([]atomic.Bool, n), label: make([]atomic.Int64, n)}
 }
 
 // Lock acquires the lock on behalf of thread i in [0, n).
 func (b *Bakery) Lock(i int) {
-	// TODO: implement Bakery.lock from Figure 2.9.
+	b.flag[i].Store(true)
+	var maxLabel int64
+	for j := range b.n {
+		if j != i && b.flag[j].Load() {
+			maxLabel = max(maxLabel, b.label[j].Load())
+		}
+	}
+	me := maxLabel + 1
+	b.label[i].Store(me)
+Retry:
+	for {
+		for j := range b.n {
+			if j != i && b.flag[j].Load() {
+				lj := b.label[j].Load()
+				lose := lj < me || (lj == me && j < i) // smallest (label[j], j) win
+				if lose {
+					continue Retry
+				}
+			}
+		}
+		return // win all
+	}
+
 }
 
 // Unlock releases the lock held by thread i.
 func (b *Bakery) Unlock(i int) {
-	// TODO: implement Bakery.unlock from Figure 2.9.
+	b.flag[i].Store(false)
+	// b.label[i].Store(0)
 }

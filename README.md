@@ -10,7 +10,7 @@ Go implementations of the algorithms from *The Art of Multiprocessor Programming
 | `check/` | Concurrency test kit: stress loops, invariant checks, linearizability validation |
 | `chXX_topic/` | One package per chapter; file names match algorithm names |
 | `docs/` | Per-chapter notes (algorithm checklist, takeaways, Go differences, benchmarks) |
-| `examples/` | Runnable examples, `go run ./examples/mcs` |
+| `examples/` | Runnable examples, e.g. `go run ./examples/mutex` |
 
 Dependency direction: `prim` -> `check` -> `chXX`. Later chapters may import earlier ones; the reverse is forbidden.
 
@@ -27,7 +27,7 @@ make cover
 
 | Ch | Directory | Topic | Status |
 |---|---|---|---|
-| 2 | `ch02_mutex` | Mutual exclusion | Not started |
+| 2 | `ch02_mutex` | Mutual exclusion | Done |
 | 3 | `ch03_objects` | Concurrent objects | Not started |
 | 4 | `ch04_regs` | Foundations of shared memory | Not started |
 | 5 | `ch05_consensus` | Relative power of synchronization operations | Not started |

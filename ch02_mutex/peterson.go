@@ -18,10 +18,14 @@ func NewPeterson() *Peterson { return &Peterson{} }
 
 // Lock acquires the lock on behalf of thread i (0 or 1).
 func (p *Peterson) Lock(i int) {
-	// TODO: implement Peterson.lock from Figure 2.4.
+	p.flag[i].Store(true)
+	p.victim.Store(int32(i))                              // latter(writer) as victim
+	j := i ^ 1                                            // the other
+	for p.flag[j].Load() && p.victim.Load() == int32(i) { // wait if not-alone && I'm the victim
+	}
 }
 
 // Unlock releases the lock held by thread i.
 func (p *Peterson) Unlock(i int) {
-	// TODO: implement Peterson.unlock from Figure 2.4.
+	p.flag[i].Store(false)
 }

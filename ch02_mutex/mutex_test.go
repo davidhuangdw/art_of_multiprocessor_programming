@@ -9,9 +9,6 @@ import (
 
 // TestMutualExclusion checks that no two goroutines are ever inside the
 // critical section at the same time, and that every attempt completes.
-//
-// LockOne and LockTwo are excluded on purpose: both can spin forever under
-// arbitrary interleaving, so a test of them would hang instead of fail.
 func TestMutualExclusion(t *testing.T) {
 	cases := []struct {
 		name string
@@ -19,9 +16,9 @@ func TestMutualExclusion(t *testing.T) {
 		new  func(n int) prim.ThreadLock
 	}{
 		{"Peterson", 2, func(int) prim.ThreadLock { return NewPeterson() }},
-		// {"Bakery/2", 2, func(n int) prim.ThreadLock { return NewBakery(n) }},
-		// {"Bakery/4", 4, func(n int) prim.ThreadLock { return NewBakery(n) }},
-		// {"Bakery/8", 8, func(n int) prim.ThreadLock { return NewBakery(n) }},
+		{"Bakery/2", 2, func(n int) prim.ThreadLock { return NewBakery(n) }},
+		{"Bakery/4", 4, func(n int) prim.ThreadLock { return NewBakery(n) }},
+		{"Bakery/8", 8, func(n int) prim.ThreadLock { return NewBakery(n) }},
 	}
 
 	const iters = 500
