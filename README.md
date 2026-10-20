@@ -29,7 +29,7 @@ make cover
 |---|---|---|---|
 | 2 | `ch02_mutex` | Mutual exclusion | Done |
 | 3 | `ch03_objects` | Concurrent objects | Not started |
-| 4 | `ch04_regs` | Foundations of shared memory | Not started |
+| 4 | `ch04_regs` | Foundations of shared memory | Done |
 | 5 | `ch05_consensus` | Relative power of synchronization operations | Not started |
 | 6 | `ch06_universal` | Universality of primitive synchronization | Not started |
 | 7 | `ch07_spin` | Spin locks and contention | Not started |
