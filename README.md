@@ -30,9 +30,9 @@ make cover
 | 2 | `ch02_mutex` | Mutual exclusion | Done |
 | 3 | `ch03_objects` | Concurrent objects | Not started |
 | 4 | `ch04_regs` | Foundations of shared memory | Done |
-| 5 | `ch05_consensus` | Relative power of synchronization operations | Not started |
+| 5 | `ch05_consensus` | Relative power of synchronization operations | Done |
 | 6 | `ch06_universal` | Universality of primitive synchronization | Not started |
-| 7 | `ch07_spin` | Spin locks and contention | Not started |
+| 7 | `ch07_spin` | Spin locks and contention | In progress |
 | 8 | `ch08_monitor` | Monitors and blocking synchronization | Not started |
 | 9 | `ch09_list` | Concurrent linked lists | Not started |
 | 10 | `ch10_queue` | Concurrent queues and the ABA problem | Not started |
