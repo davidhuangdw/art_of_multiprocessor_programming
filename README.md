@@ -32,7 +32,7 @@ make cover
 | 4 | `ch04_regs` | Foundations of shared memory | Done |
 | 5 | `ch05_consensus` | Relative power of synchronization operations | Done |
 | 6 | `ch06_universal` | Universality of primitive synchronization | Not started |
-| 7 | `ch07_spin` | Spin locks and contention | In progress |
+| 7 | `ch07_spin` | Spin locks and contention | Done |
 | 8 | `ch08_monitor` | Monitors and blocking synchronization | Not started |
 | 9 | `ch09_list` | Concurrent linked lists | Not started |
 | 10 | `ch10_queue` | Concurrent queues and the ABA problem | Not started |

@@ -1,75 +1,73 @@
 # ch07_spin — Spin Locks and Contention
 
-## Algorithms from the book
-- [x] TASLock — `tas_lock.go`
-- [x] TTASLock — `ttas_lock.go`
-- [x] BackoffLock — `backoff_lock.go`
-- [x] AndersonQueueLock — `anderson_lock.go`
-- [x] CLHLock — `clh_lock.go`
-- [x] MCSLock — `mcs_lock.go`
-- [ ] CompositeLock — `composite_lock.go` (stub)
+TAS/TTAS/Backoff implement `prim.Lock`; Anderson/CLH/MCS/Composite implement
+`prim.ThreadLock` (caller-owned index in `[0, n)`, same index for `Lock` and
+`Unlock`).
 
-TAS/TTAS/Backoff implement `prim.Lock`. Anderson/CLH/MCS/Composite implement
-`prim.ThreadLock` and require a thread index in `[0, n)`; the same index must
-be used for `Lock` and `Unlock`.
+- [x] TASLock, TTASLock, BackoffLock, AndersonQueueLock, CLHLock, MCSLock
+- [x] CompositeLock — no `ABORTED` state, no fast path yet
 
-`spin_test.go` checks a basic Lock/Unlock path, mutual exclusion with
-`check.Critical`, and a plain counter protected only by each lock.
+| Lock | Idea | Space |
+|---|---|---|
+| TAS | spin on `Swap(true)`; every attempt writes the cache line | O(1) |
+| TTAS | spin on `Load`, `Swap` only when it looks free | O(1) |
+| Backoff | TTAS + randomized exponential backoff after a failed `Swap` | O(1) |
+| Anderson | `tail.Add(1)` hands out FIFO slots; each waits on its own slot | O(n) |
+| CLH | publish own node at the tail, spin on the *predecessor's* `free`, recycle it on `Unlock` | O(n) |
+| MCS | spin on *own* `free`; predecessor links `nxt=me`, then grants | O(n) |
+| Composite | `CAS(FREE,WAITING)` a node from a 64-node pool, splice, spin on predecessor, recycle it; `case 2` revives a `RELEASED` tail node | O(1) |
 
-`CompositeLock` is scaffolded; `Lock`/`Unlock` currently panic, so the full
-`spin_test.go` run is red until it is implemented.
+## Invariants
 
-## Key takeaways
-- **TASLock**: spins on `Swap(true)`. Every attempt writes the cache line, so
-  contention is expensive.
-- **TTASLock**: first spins on `Load`, and only attempts `Swap(true)` after
-  observing the lock free. This reduces cache-line traffic under contention.
-- **BackoffLock**: TTAS plus randomized exponential backoff after a failed
-  `Swap`. `prim.Backoff` starts at `minDelay` and doubles up to `maxDelay`.
-- **AndersonQueueLock**: `tail.Add(1)` assigns FIFO slots. Each thread waits
-  on its own `que` slot; `Unlock` clears the current slot and sets the next one.
-- **CLHLock**: each thread publishes its own node at the tail and spins on the
-  predecessor's `free` flag. `Unlock` releases its node and reuses the
-  predecessor node, so no allocation is needed per acquisition.
-- **MCSLock**: each thread spins on its own `free` flag. The predecessor links
-  `nxt = me` and then grants the lock by setting `me.free = true`. If there is
-  no successor, `Unlock` CASes the tail back to nil; otherwise it waits for the
-  successor link and hands off.
-- **CompositeLock**: a fast path (typically a TAS-like acquisition) combined
-  with a queue of per-thread composite nodes for the contended path; planned,
-  not implemented yet.
+- **`tail` is the only MRMW register.** Its atomic RMW gives each thread a
+  unique predecessor or slot, which is why `free`/`nxt` need only `Store`:
+  one successor at a time, FIFO order, and `Unlock` always hands off to it.
+- **Single writer per index** — `ind[i]`, `nodes[i]`, `pres[i]`, `alloc[i]` are
+  plain fields. Break the `ThreadLock` contract and they become lost updates.
+- **Composite:** `tail` never points at a `FREE` node; at most one node is
+  `RELEASED`, and at quiescence it is the tail.
+- **Composite:** the `StampedTail` cell is fresh per publication, so the cell
+  pointer *is* the version (Go's `AtomicStampedReference`).
 
-## Go-specific differences / pitfalls
-- Go has no thread ID, so queue locks take an explicit per-goroutine index via
-  `prim.ThreadLock`. The same index must be used for `Lock` and `Unlock`.
-- Spin loops must read and write atomics; plain variables do not provide the
-  required synchronization under the Go memory model.
-- `AndersonQueueLock.ind` is a plain `[]int`: it is safe only when each index
-  has a single writer, which is exactly the `ThreadLock` contract.
-- CLH/MCS reuse per-thread nodes. The grant flag must be reset before the
-  predecessor links the node (`pre.nxt.Store`); otherwise a stale `true` lets
-  the thread enter while a predecessor still holds the lock.
-- MCS `Unlock` is not wait-free: if the tail CAS fails, it spins until the
-  successor links itself. This is the standard MCS handoff; acquisition remains
-  FIFO.
-- `BackoffLock` validates `minDelay`/`maxDelay`. Direct users of
-  `prim.NewBackoff` must also pass a positive range, because `Backoff` uses
-  `rand.N(limit)` and would panic on a non-positive limit.
-- Spin loops burn CPU. Use `-race` plus `check.Stress` and `check.Critical`
-  for correctness, and benchmarks for contention behavior.
+## Pitfalls
 
-## Verification
+- **Stale grant (CLH/MCS):** reset `free` to false before the predecessor can
+  link the node, or an old grant lets you in while someone else holds.
+- **A fast path needs one atomic word.** The `FASTPATH` bit must live in the
+  tail cell; a separate `atomic.Bool` misses the window where a queued thread
+  splices onto an empty tail and is granted while another thread wins the flag.
+- **Don't reuse tail cells.** ABA: two threads both see `RELEASED`, both CAS the
+  tail, both think they are alone. The 1 cell (8 B) allocated per Composite
+  acquisition is the price.
+- **`me` is picked once, outside the retry loop**, so landing on a busy node
+  means backing off against that node. And `case 2` is load-bearing: it keeps
+  the lock moving once the pool is drained.
+
+## Measurements
+
+M1 Pro, `GOMAXPROCS=10`, empty critical section; contended = median per-op
+across all goroutines.
+
+| Lock | uncontended ns/op | n=8 ns/op | allocs/op |
+|---|---|---|---|
+| CLH | 7 | 265 | 0 |
+| MCS | 15 | 270 | 0 |
+| Composite | 19 | 287 | 1 × 8 B |
+| Anderson | 13 | 298 | 0 |
+| TTAS | 11 | 119 | 0 |
+| Backoff | 11 | 14 | 0 |
+
+Queue locks sit in one band. Composite is not faster than MCS; what it buys is
+O(1) space and abortability (not implemented). Backoff wins on an empty critical
+section only because it sleeps instead of thrashing cache lines.
+
+## Verify
+
+`spin_test.go`: 8 goroutines per lock, `check.Critical`, a lock-protected `int`
+counter, and `TestCompositeLockNodePool` (no leak, `RELEASED <= 1`).
+
 ```bash
-# Implemented locks only
-go test ./ch07_spin -race -count=200 \
-  -run 'TestSpinLock(Smoke|MutualExclusion|Counter)/(TASLock|TTASLock|BackoffLock|AndersonQueueLock|CLHLock|MCSLock)$'
-
-# Full suite; red until CompositeLock is implemented
-go test ./ch07_spin -race -count=200
-go test ./... -count=1
+go test ./ch07_spin -race -count=10
+GOMAXPROCS=1 go test ./ch07_spin -race -count=5
 go vet ./...
 ```
-
-## Benchmark data
-Not implemented yet. Intended comparison: TAS/TTAS/Backoff and the queue locks
-at increasing contention levels.

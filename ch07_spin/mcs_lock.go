@@ -8,7 +8,7 @@ import (
 
 // CLH vs. MCS
 // CLH: spin on prev.state
-// MCS: spin on self.state(set by prev -- need link prev.nxt:=me )
+// MCS: spin on self.state(set by prev -- need link prev.nxt:=me ) && take care me.nxt
 
 // MCSLock is the MCS queue lock from Chapter 7.
 // Each caller owns a fixed thread index in [0, n).

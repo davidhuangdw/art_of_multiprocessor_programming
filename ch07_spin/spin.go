@@ -10,6 +10,8 @@ func validateThreads(n int) {
 }
 
 type Node struct {
-	free atomic.Bool
-	nxt  atomic.Pointer[Node]
+	free  atomic.Bool          // for CLH, MCS: bool state
+	nxt   atomic.Pointer[Node] // for MCS
+	id    int                  // for debug
+	state atomic.Int32         // for composite lock: more states
 }

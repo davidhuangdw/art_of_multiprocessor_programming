@@ -35,17 +35,21 @@ func NewCLHLock(n int) *CLHLock {
 // Lock acquires the lock on behalf of thread i in [0, n).
 func (l *CLHLock) Lock(i int) {
 	me := l.nodes[i]
-	me.free.Store(false) // block my next
+	// me.free.Store(false) // block my next
 
 	pre := l.tail.Swap(me) // enque
 	l.pres[i] = pre
-	for !pre.free.Load() { // spin wait on pre
+	for !pre.free.Load() { // spin wait on pre -- single-reader
 	}
+
+	// critical zone begin:
+	pre.free.Store(false) // always: free=true node <=1
 }
 
 // Unlock releases the lock held by thread i.
 func (l *CLHLock) Unlock(i int) {
-	l.nodes[i].free.Store(true)            // release for my next
+	l.nodes[i].free.Store(true) // release for my next -- single-writer
+	// critical zone ended
 	l.nodes[i], l.pres[i] = l.pres[i], nil // reuse pre-node instead of create new one: everyone shift right
 }
 
