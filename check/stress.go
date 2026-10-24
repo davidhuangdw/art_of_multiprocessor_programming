@@ -4,6 +4,7 @@ import (
 	"runtime/debug"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Stress runs fn in goroutines goroutines, iters times per goroutine.
@@ -35,4 +36,28 @@ func Stress(tb testing.TB, goroutines, iters int, fn func(g int)) {
 		}(g)
 	}
 	wg.Wait()
+}
+
+// StressTimeout runs Stress in the background and reports a failure if it has
+// not finished within timeout.
+//
+// A deadlocked lock otherwise shows up only as the `go test` timeout, minutes
+// later and without pointing at the lock. The goroutines started by Stress are
+// abandoned on timeout; they are parked inside the lock and do not touch tb
+// again, so the test can finish normally.
+func StressTimeout(tb testing.TB, timeout time.Duration, goroutines, iters int, fn func(g int)) {
+	tb.Helper()
+
+	done := make(chan struct{})
+	go func() {
+		Stress(tb, goroutines, iters, fn)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		tb.Errorf("stress (%d goroutines x %d iterations) did not finish within %s: deadlock?",
+			goroutines, iters, timeout)
+	}
 }
