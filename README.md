@@ -34,7 +34,7 @@ make cover
 | 6 | `ch06_universal` | Universality of primitive synchronization | Not started |
 | 7 | `ch07_spin` | Spin locks and contention | Done |
 | 8 | `ch08_monitor` | Monitors and blocking synchronization | Done |
-| 9 | `ch09_list` | Concurrent linked lists | Not started |
+| 9 | `ch09_list` | Concurrent linked lists | In progress |
 | 10 | `ch10_queue` | Concurrent queues and the ABA problem | Not started |
 | 11 | `ch11_stack` | Concurrent stacks and elimination | Not started |
 | 12 | `ch12_count` | Counting, sorting, and distributed coordination | Not started |

@@ -11,4 +11,5 @@ coverage.html
 
 # Editors / OS
 .idea/
+.vscode
 .DS_Store
