@@ -278,3 +278,57 @@ func TestSetConcurrentReaders(t *testing.T) {
 		})
 	}
 }
+
+// TestLockFreeMarkedNodeDoesNotBlock pins the progress guarantee: a node that is
+// already marked but not yet unlinked must not stall other goroutines.
+// Traversal has to splice marked nodes out (the book's "snip") instead of
+// retrying forever on the same node.
+//
+// It pokes at the internals because "mark without unlinking" is only reachable
+// from inside the package.
+func TestLockFreeMarkedNodeDoesNotBlock(t *testing.T) {
+	defer check.Recover(t)
+
+	s := NewLockFreeList()
+	if !s.Add(5) || !s.Add(9) {
+		t.Fatal("setup Add failed")
+	}
+
+	// Mark 5 and leave it linked: as if a Remove were preempted between
+	// marking the node and unlinking it.
+	var marked *eNode
+	for n := s.head.v.Load().next; n != nil; n = n.v.Load().next {
+		if n.key == 5 {
+			marked = n
+			break
+		}
+	}
+	if marked == nil {
+		t.Fatal("Add(5) did not link a node with key 5")
+	}
+	cur := marked.v.Load()
+	if !marked.v.CompareAndSwap(cur, &eVersioned{next: cur.next, removed: true}) {
+		t.Fatal("could not mark node 5")
+	}
+	if s.Contains(5) {
+		t.Fatal("Contains(5) = true for a marked node")
+	}
+
+	done := make(chan bool, 1)
+	go func() { done <- s.Add(3) }() // 3 < 5, so the traversal meets the marked node
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("Add(3) = false")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Add(3) blocked on a marked node: traversal never spliced it (not lock-free)")
+	}
+
+	if s.Contains(5) {
+		t.Fatal("Contains(5) = true after the marked node was spliced")
+	}
+	if !s.Contains(3) || !s.Contains(9) {
+		t.Fatal("neighbour lost while splicing the marked node")
+	}
+}

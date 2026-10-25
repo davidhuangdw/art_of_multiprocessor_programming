@@ -1,66 +1,62 @@
 # ch09_list — Linked Lists: The Role of Locking
 
-`prim.Set`: `Add`/`Remove`/`Contains`, all callable concurrently. Every
-implementation keeps the nodes sorted and returns `true` only when the value
-actually changed (inserted / removed).
+`prim.Set`: `Add`/`Remove`/`Contains`, all callable concurrently. Nodes stay
+sorted and an operation returns `true` only when the value actually changed.
 
-## Algorithms
+| Type | File | Locking | Progress |
+|---|---|---|---|
+| `CoarseList` | `coarse_list.go` | one mutex for the whole list | blocking |
+| `FineList` | `fine_list.go` | hand-over-hand, 2 node locks per step | blocking |
+| `OptimisticList` | `optimistic_list.go` | lock-free walk, then lock `pre`+`cur` and re-validate | blocking |
+| `LazyList` | `lazy_list.go` | lock-free walk, mark + splice under node locks | blocking |
+| `LockFreeList` | `lock_free_list.go` | none: CAS on `{removed, next}` cells | lock-free |
 
-- [x] CoarseList — `coarse_list.go`
-- [x] FineList — `fine_list.go`
-- [x] OptimisticList — `optimistic_list.go`
-- [x] LazyList — `lazy_list.go`
-- [ ] LockFreeList — `lock_free_list.go` (stub)
-
-| Type | Locking | Cost |
-|---|---|---|
-| `CoarseList` | 1 mutex | correct but fully serial |
-| `FineList` | all nodes visited | 2 locks per step, deadlock-free by ordering |
-| `OptimisticList` | traversal lock-free, 2 locks + re-validate | short lock hold, retries on conflicts |
-| `LazyList` | traversal lock-free, splice under node lock | `Contains` never locks |
-| `LockFreeList` | none | CAS + mark bit, traversal also unlinks |
-
-`FineList` and the later three use different node types (`cNode`/`fNode`/`oNode`
-with plain, plain, then atomic links): plain links are fine while every access
-holds the node's lock, but `OptimisticList`/`LazyList` read links without any
-lock, so there `next` is an `atomic.Pointer` and `removed` an `atomic.Bool`.
-`key` stays plain — it is written once before publication, and the `next` store
-carries it.
+Node types differ on purpose: `cNode`/`fNode` keep a plain `next` (every access
+holds that node's lock), while `oNode` uses `atomic.Pointer`/`atomic.Bool` and
+`eNode` a `{removed, next}` cell, because their traversals read links with no
+lock held. `key` stays plain in all of them: it is written once before the node
+is published, and the release store that publishes the node carries it.
 
 ## Contract the tests pin
 
-- `Add(v)` is true exactly once per value; `Remove(v)` is true exactly once.
-- `Contains` reflects a completed `Add`/`Remove` on the same goroutine.
-- Concurrent `Add` of the same value: exactly one caller wins.
-- Disjoint concurrent inserts/removes lose nothing.
-- A value nobody touches survives arbitrary churn: no lost node, no broken
-  neighbour chain.
+- `Add`/`Remove` report `true` exactly once per value; concurrent `Add` of the
+  same value has exactly one winner.
+- A completed `Add`/`Remove` is visible to `Contains` on the same goroutine.
+- Disjoint concurrent inserts/removes lose nothing, and a value nobody touches
+  survives churn with its neighbours intact.
 - `Contains` is safe while others mutate.
 
-## Go-specific differences / pitfalls
-- Go has no `AtomicMarkableReference`; `LockFreeList` needs a markable pointer
-  (pack the mark bit in the pointer or keep a `{ptr, marked}` cell swapped by
-  `atomic.Pointer`). A plain `atomic.Pointer` is not enough.
-- Per-node locks are usually `sync.Mutex` values inside the node; nodes must
-  never be copied after first use (`go vet` catches `copylocks`).
-- `Remove` under fine-grained locking must not hold a lock while allocating;
-  allocate the node before taking any lock.
-- `OptimisticList` must never lock while re-traversing to validate: its own
-  traversal already holds `pre`+`cur`, and `sync.Mutex` is not reentrant, so a
-  locking validate deadlocks the goroutine against itself.
-- Sentinels are `math.MinInt`/`math.MaxInt` (Go has no ±∞). `math.MaxInt` is
-  therefore *reserved*: `Contains(math.MaxInt)` is always true, and
-  `Remove(math.MaxInt)` unlinks the tail sentinel and breaks every later
-  traversal. Values used by the tests stay well inside the range.
-- Tests include negative values so a sentinel-comparison bug shows up.
+## Go notes / pitfalls
+
+- No `AtomicMarkableReference`: `LockFreeList` represents the link as an
+  immutable `{removed, next}` cell behind `atomic.Pointer`, so "marked?" and
+  "successor?" come from one load. Publishing a **fresh cell per write** makes
+  the pointer itself the version, which is what rules out ABA.
+- A marked-but-still-linked node must never block anybody: traversal splices
+  marked nodes out (the book's snip). Merely *skipping* them still spins forever
+  in validation — `TestLockFreeMarkedNodeDoesNotBlock` pins this.
+- Marking is the linearization point, so `LockFreeList.Remove` returns `true`
+  once the mark CAS wins even if the unlink CAS loses; the next traversal
+  finishes the unlink. Never panic because the marked node is already gone.
+- Lock-free reads require atomics: without them arm64 hands out a
+  half-published node (`key=0, next=nil`). `make race` is the gate.
+- `OptimisticList` validates by re-walking **without** locking: it already holds
+  `pre`+`cur`, and `sync.Mutex` is not reentrant, so a locking validate
+  deadlocks the goroutine against itself.
+- Per-node locks live inside the node, so a node must never be copied after its
+  first use (`go vet` catches `copylocks`); allocate before locking.
+- Sentinels are `math.MinInt`/`math.MaxInt` (Go has no ±∞), so `MaxInt` is
+  reserved: `Contains(MaxInt)` is always true and `Remove(MaxInt)` unlinks the
+  tail sentinel and breaks every later traversal.
 
 ## Tests
 
-`list_test.go` runs every implementation through the same contract:
-`TestSetSequential`, `TestSetConcurrentDisjointAdds`,
-`TestSetConcurrentDuplicateAdd`, `TestSetConcurrentDisjointRemoves`,
-`TestSetChurn` (watched value + add/remove churn) and `TestSetConcurrentReaders`.
-Stress runs go through `check.StressTimeout`, so a deadlock fails in 10s.
+`list_test.go` runs all five through one contract: `TestSetSequential`,
+`TestSetConcurrentDisjointAdds`, `TestSetConcurrentDuplicateAdd`,
+`TestSetConcurrentDisjointRemoves`, `TestSetChurn` (watched value + add/remove
+churn) and `TestSetConcurrentReaders`, plus `TestLockFreeMarkedNodeDoesNotBlock`
+(progress; `LockFreeList` only). Stress runs go through `check.StressTimeout`,
+so a deadlock fails in 10s instead of hanging until the `go test` timeout.
 
 ```bash
 go test ./ch09_list -race -count=10
