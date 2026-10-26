@@ -35,7 +35,7 @@ make cover
 | 7 | `ch07_spin` | Spin locks and contention | Done |
 | 8 | `ch08_monitor` | Monitors and blocking synchronization | Done |
 | 9 | `ch09_list` | Concurrent linked lists | Done |
-| 10 | `ch10_queue` | Concurrent queues and the ABA problem | Not started |
+| 10 | `ch10_queue` | Concurrent queues and the ABA problem | Done |
 | 11 | `ch11_stack` | Concurrent stacks and elimination | Not started |
 | 12 | `ch12_count` | Counting, sorting, and distributed coordination | Not started |
 | 13 | `ch13_hash` | Concurrent hashing | Not started |
